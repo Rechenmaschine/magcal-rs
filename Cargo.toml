@@ -6,6 +6,10 @@ rust-version = "1.63"
 authors = ["Louis Schell <louis.schell1@gmx.de>"]
 description = "Minimal no_std rust port of Freescale/NXP magcal.c"
 license = "BSD-3-Clause"
+repository = "https://github.com/Rechenmaschine/magcal-rs"
+readme = "README.md"
+keywords = ["magnetometer", "calibration", "embedded", "no-std"]
+categories = ["algorithms", "embedded", "no-std"]
 
 [dependencies]
 libm = "0.2.11"
