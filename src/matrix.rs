@@ -31,6 +31,8 @@
 //!
 //! [upstream]: https://github.com/PaulStoffregen/MotionCal/blob/master/matrix.c
 
+#![allow(clippy::needless_range_loop)]
+
 use libm::{fabsf, sqrtf};
 
 /// `f3x3matrixAeqI` in `matrix.c`: set A to the 3x3 identity.
@@ -175,9 +177,7 @@ pub(crate) fn fmatrix_inverse_4x4(a: &mut [[f32; 4]; 4]) {
         let j = col_ind[l];
         if i != j {
             for k in 0..N {
-                let t = a[k][i];
-                a[k][i] = a[k][j];
-                a[k][j] = t;
+                a[k].swap(i, j);
             }
         }
     }

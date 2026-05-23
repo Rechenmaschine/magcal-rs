@@ -61,7 +61,7 @@ mod matrix;
 mod solver;
 
 pub use solver::{
-    DEFAULT_SCALE, MIN_SAMPLES_AXIS_ALIGNED, MIN_SAMPLES_ELLIPSOID, MIN_SAMPLES_SPHERE, Solver,
+    Solver, DEFAULT_SCALE, MIN_SAMPLES_AXIS_ALIGNED, MIN_SAMPLES_ELLIPSOID, MIN_SAMPLES_SPHERE,
 };
 
 /// Which solver tier produced a [`MagCal`]

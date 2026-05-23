@@ -11,11 +11,7 @@ use magcal::Solver;
 
 fn main() {
     const HARD_IRON: [f32; 3] = [120.0, -80.0, 45.0];
-    const W: [[f32; 3]; 3] = [
-        [1.2, 0.05, 0.0],
-        [0.05, 0.9, -0.03],
-        [0.0, -0.03, 1.1],
-    ];
+    const W: [[f32; 3]; 3] = [[1.2, 0.05, 0.0], [0.05, 0.9, -0.03], [0.0, -0.03, 1.1]];
     const RADIUS: f32 = 500.0;
     const N: usize = 200;
 
@@ -38,7 +34,10 @@ fn main() {
 
     println!("recovered hard iron: {:?}", cal.hard_iron);
     println!("ground truth:        {:?}", HARD_IRON);
-    println!("field strength:      {} (truth ~{})", cal.field_strength, RADIUS);
+    println!(
+        "field strength:      {} (truth ~{})",
+        cal.field_strength, RADIUS
+    );
     println!("fit error:           {:.4} %", cal.fit_error_percent);
     println!("recovered soft iron (det-1 normalised):");
     for row in &cal.soft_iron {

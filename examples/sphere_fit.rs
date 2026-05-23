@@ -28,6 +28,9 @@ fn main() {
 
     println!("recovered hard iron: {:?}", cal.hard_iron);
     println!("ground truth:        {:?}", HARD_IRON);
-    println!("field strength:      {} (truth {})", cal.field_strength, RADIUS);
+    println!(
+        "field strength:      {} (truth {})",
+        cal.field_strength, RADIUS
+    );
     println!("tier used:           {:?}", cal.tier);
 }

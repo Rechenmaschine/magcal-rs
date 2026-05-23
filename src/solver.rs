@@ -26,12 +26,13 @@
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 // SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+#![allow(clippy::needless_range_loop)]
+
 use libm::{fabsf, powf, sqrtf};
 
 use crate::matrix::{
-    eigencompute, f3x3_matrix_a_eq_a_x_scalar, f3x3_matrix_a_eq_i,
-    f3x3_matrix_a_eq_inv_sym_b, f3x3_matrix_a_eq_minus_a, f3x3_matrix_det_a,
-    fmatrix_inverse_4x4,
+    eigencompute, f3x3_matrix_a_eq_a_x_scalar, f3x3_matrix_a_eq_i, f3x3_matrix_a_eq_inv_sym_b,
+    f3x3_matrix_a_eq_minus_a, f3x3_matrix_det_a, fmatrix_inverse_4x4,
 };
 use crate::{FitError, MagCal, SolverTier};
 
@@ -463,9 +464,7 @@ impl Solver {
             tr_v[k] = 0.5 * beta[k];
         }
 
-        let mut tr_b = sqrtf(
-            beta[3] + tr_v[0] * tr_v[0] + tr_v[1] * tr_v[1] + tr_v[2] * tr_v[2],
-        );
+        let mut tr_b = sqrtf(beta[3] + tr_v[0] * tr_v[0] + tr_v[1] * tr_v[1] + tr_v[2] * tr_v[2]);
         let fit_err = sqrtf(e / count as f32) * 100.0 / (2.0 * tr_b * tr_b);
 
         for k in 0..3 {
@@ -490,4 +489,3 @@ impl Default for Solver {
         Self::new()
     }
 }
-
