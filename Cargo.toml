@@ -1,0 +1,11 @@
+[package]
+name = "magcal"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.63"
+authors = ["Louis Schell <louis.schell1@gmx.de>"]
+description = "Minimal no_std rust port of Freescale/NXP magcal.c"
+license = "BSD-3-Clause"
+
+[dependencies]
+libm = "0.2.11"
