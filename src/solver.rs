@@ -90,7 +90,12 @@ impl Solver {
     }
 
     /// New solver with a caller-chosen numerical conditioning scale.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `scale` is not positive and finite.
     pub const fn with_scale(scale: f32) -> Self {
+        assert!(scale > 0.0 && scale < f32::INFINITY);
         Self {
             scale,
             sample_count: 0,
