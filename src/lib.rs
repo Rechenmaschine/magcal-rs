@@ -60,6 +60,12 @@
 mod matrix;
 mod solver;
 
+#[inline]
+pub(crate) fn c_fabs(x: f32) -> f64 {
+    // Upstream calls C `fabs(float_expr)`, which promotes through double.
+    (x as f64).abs()
+}
+
 pub use solver::{
     Solver, DEFAULT_SCALE, MIN_SAMPLES_AXIS_ALIGNED, MIN_SAMPLES_ELLIPSOID, MIN_SAMPLES_SPHERE,
 };

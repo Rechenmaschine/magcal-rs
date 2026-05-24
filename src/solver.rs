@@ -28,13 +28,13 @@
 
 #![allow(clippy::needless_range_loop)]
 
-use libm::{fabsf, powf, sqrtf};
+use libm::{powf, sqrtf};
 
 use crate::matrix::{
     eigencompute, f3x3_matrix_a_eq_a_x_scalar, f3x3_matrix_a_eq_i, f3x3_matrix_a_eq_inv_sym_b,
     f3x3_matrix_a_eq_minus_a, f3x3_matrix_det_a, fmatrix_inverse_4x4,
 };
-use crate::{FitError, MagCal, SolverTier};
+use crate::{c_fabs, FitError, MagCal, SolverTier};
 
 const ONE_THIRD: f32 = 0.333_333_33;
 const ONE_SIXTH: f32 = 0.166_666_67;
@@ -279,17 +279,16 @@ impl Solver {
             tr_v[k] = acc * -0.5;
         }
 
-        let mut tr_b = sqrtf(fabsf(
-            a[0][0] * tr_v[0] * tr_v[0]
-                + 2.0 * a[0][1] * tr_v[0] * tr_v[1]
-                + 2.0 * a[0][2] * tr_v[0] * tr_v[2]
-                + a[1][1] * tr_v[1] * tr_v[1]
-                + 2.0 * a[1][2] * tr_v[1] * tr_v[2]
-                + a[2][2] * tr_v[2] * tr_v[2]
-                - mat_b[9][j],
-        ));
+        let tr_b_sq = a[0][0] * tr_v[0] * tr_v[0]
+            + 2.0 * a[0][1] * tr_v[0] * tr_v[1]
+            + 2.0 * a[0][2] * tr_v[0] * tr_v[2]
+            + a[1][1] * tr_v[1] * tr_v[1]
+            + 2.0 * a[1][2] * tr_v[1] * tr_v[2]
+            + a[2][2] * tr_v[2] * tr_v[2]
+            - mat_b[9][j];
+        let mut tr_b = sqrtf(c_fabs(tr_b_sq) as f32);
 
-        let fit_err = 50.0 * sqrtf(fabsf(vec_a[j]) / count as f32) / (tr_b * tr_b);
+        let fit_err = 50.0 * sqrtf((c_fabs(vec_a[j]) / count as f64) as f32) / (tr_b * tr_b);
 
         for k in 0..3 {
             tr_v[k] = tr_v[k] * self.scale + self.i_offset[k] as f32;
@@ -308,7 +307,7 @@ impl Solver {
         eigencompute(&mut a10, &mut vec_a, &mut mat_b, 3);
 
         for jj in 0..3 {
-            let ftmp = sqrtf(sqrtf(fabsf(vec_a[jj])));
+            let ftmp = sqrtf(sqrtf(c_fabs(vec_a[jj]) as f32));
             for i in 0..3 {
                 mat_b[i][jj] *= ftmp;
             }
@@ -388,15 +387,16 @@ impl Solver {
             ftmp += a[k][k] * tr_v[k] * tr_v[k];
         }
 
-        let fit_err = 50.0 * sqrtf(fabsf(vec_a[j]) / count as f32) / fabsf(ftmp);
+        let fit_err_numerator = 50.0 * sqrtf((c_fabs(vec_a[j]) / count as f64) as f32);
+        let fit_err = (fit_err_numerator as f64 / c_fabs(ftmp)) as f32;
 
         f3x3_matrix_a_eq_a_x_scalar(&mut a, powf(det, -ONE_THIRD));
-        let tr_b = sqrtf(fabsf(ftmp)) * self.scale * powf(det, -ONE_SIXTH);
+        let tr_b = sqrtf(c_fabs(ftmp) as f32) * self.scale * powf(det, -ONE_SIXTH);
 
         let mut tr_inv_w = [[0.0_f32; 3]; 3];
         f3x3_matrix_a_eq_i(&mut tr_inv_w);
         for k in 0..3 {
-            tr_inv_w[k][k] = sqrtf(fabsf(a[k][k]));
+            tr_inv_w[k][k] = sqrtf(c_fabs(a[k][k]) as f32);
             tr_v[k] = tr_v[k] * self.scale + self.i_offset[k] as f32;
         }
 

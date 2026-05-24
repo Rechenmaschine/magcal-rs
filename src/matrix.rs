@@ -35,6 +35,8 @@
 
 use libm::{fabsf, sqrtf};
 
+use crate::c_fabs;
+
 /// `f3x3matrixAeqI` in `matrix.c`: set A to the 3x3 identity.
 pub(crate) fn f3x3_matrix_a_eq_i(a: &mut [[f32; 3]; 3]) {
     for r in 0..3 {
@@ -209,7 +211,7 @@ pub(crate) fn eigencompute(
         let mut residue: f32 = 0.0;
         for ir in 0..n.saturating_sub(1) {
             for ic in (ir + 1)..n {
-                residue += fabsf(mat_a[ir][ic]);
+                residue = (residue as f64 + c_fabs(mat_a[ir][ic])) as f32;
             }
         }
         if residue <= 0.0 {
@@ -222,7 +224,8 @@ pub(crate) fn eigencompute(
                     continue;
                 }
                 let cot2phi = 0.5 * (eigval[ic] - eigval[ir]) / mat_a[ir][ic];
-                let mut tanphi = 1.0 / (fabsf(cot2phi) + sqrtf(1.0 + cot2phi * cot2phi));
+                let mut tanphi =
+                    (1.0_f64 / (c_fabs(cot2phi) + sqrtf(1.0 + cot2phi * cot2phi) as f64)) as f32;
                 if cot2phi < 0.0 {
                     tanphi = -tanphi;
                 }
