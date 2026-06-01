@@ -47,10 +47,6 @@ pub const MIN_SAMPLES_SPHERE: usize = 40;
 pub const MIN_SAMPLES_AXIS_ALIGNED: usize = 100;
 pub const MIN_SAMPLES_ELLIPSOID: usize = 150;
 
-const SPHERE_PARAMS: usize = 4;
-const AXIS_ALIGNED_PARAMS: usize = 7;
-const ELLIPSOID_PARAMS: usize = 10;
-
 /// Streaming magnetometer-calibration solver. Accumulates samples via
 /// [`push_sample`](Self::push_sample) and, on demand, runs one of
 /// the three fitters ported from [`magcal.c`][upstream]:
@@ -75,12 +71,6 @@ pub struct Solver {
     axis_mat_a: [[f32; 7]; 7],
 
     ell_mat_a: [[f32; 10]; 10],
-
-    tr_v: [f32; 3],
-    tr_inv_w: [[f32; 3]; 3],
-    tr_b: f32,
-    tr_fit_error_percent: f32,
-    last_tier: Option<SolverTier>,
 }
 
 impl Solver {
@@ -105,15 +95,10 @@ impl Solver {
             sph_sum_bp4: 0.0,
             axis_mat_a: [[0.0; 7]; 7],
             ell_mat_a: [[0.0; 10]; 10],
-            tr_v: [0.0; 3],
-            tr_inv_w: [[0.0; 3]; 3],
-            tr_b: 0.0,
-            tr_fit_error_percent: 0.0,
-            last_tier: None,
         }
     }
 
-    /// Zero the accumulators and clear the last fit, so a long-lived
+    /// Zero the accumulators, so a long-lived
     /// (e.g. `static`) [`Solver`] can be reused across cal cycles.
     pub fn reset(&mut self) {
         self.sample_count = 0;
@@ -123,7 +108,6 @@ impl Solver {
         self.sph_sum_bp4 = 0.0;
         self.axis_mat_a = [[0.0; 7]; 7];
         self.ell_mat_a = [[0.0; 10]; 10];
-        self.last_tier = None;
     }
 
     /// Fold one raw sample into the running per-tier accumulators.
@@ -183,29 +167,33 @@ impl Solver {
         self.sample_count += 1;
     }
 
-    /// Number of samples pushed since construction / last reset.
-    pub fn sample_count(&self) -> usize {
+    fn sample_count(&self) -> usize {
         self.sample_count as usize
     }
 
-    /// The most recent fit's result, or `None` if no fit has been run
-    /// since the last [`reset`](Self::reset).
-    pub fn last_fit(&self) -> Option<MagCal> {
-        self.last_tier.map(|tier| MagCal {
-            hard_iron: self.tr_v,
-            soft_iron: self.tr_inv_w,
-            field_strength: self.tr_b,
-            fit_error_percent: self.tr_fit_error_percent,
-            tier,
-        })
+    fn validate_fit(cal: MagCal) -> Result<MagCal, FitError> {
+        if !cal.field_strength.is_finite()
+            || cal.field_strength <= 0.0
+            || !cal.fit_error_percent.is_finite()
+            || cal.hard_iron.iter().any(|v| !v.is_finite())
+            || cal
+                .soft_iron
+                .iter()
+                .flat_map(|row| row.iter())
+                .any(|v| !v.is_finite())
+        {
+            return Err(FitError::NonFiniteFit { tier: cal.tier });
+        }
+
+        Ok(cal)
     }
 
     /// Run a fit using the highest-tier solver whose recommended
-    /// sample count (see [`SolverTier::min_samples`]) is met by the
+    /// sample count (see [`SolverTier::min_samples_recommended`]) is met by the
     /// current sample count, falling back to a sphere fit otherwise.
     ///
-    /// Returns [`FitError::NotEnoughSamples`] only when even the
-    /// sphere fit cannot run (fewer than 4 samples).
+    /// Returns [`FitError::NotEnoughSamples`] only when even the sphere fit
+    /// cannot run.
     ///
     /// For more control, call the direct `solve_*` methods or use
     /// [`MagCal::fit_with`] instead.
@@ -220,15 +208,16 @@ impl Solver {
         }
     }
 
-    /// Run a full-ellipsoid fit (hard iron + 3x3 soft iron). Needs at least 10 samples.
+    /// Run a full-ellipsoid fit (hard iron + 3x3 soft iron).
     ///
     /// This corresponds with `fUpdateCalibration10EIG` in `magcal.c`.
     pub fn solve_ellipsoid(&mut self) -> Result<MagCal, FitError> {
         let count = self.sample_count();
-        if count < ELLIPSOID_PARAMS {
+        let minimum_required = SolverTier::Ellipsoid.min_samples_required();
+        if count < minimum_required {
             return Err(FitError::NotEnoughSamples {
                 provided: count,
-                required: ELLIPSOID_PARAMS,
+                minimum_required,
             });
         }
 
@@ -273,7 +262,11 @@ impl Solver {
         }
 
         let mut inv_a = [[0.0_f32; 3]; 3];
-        f3x3_matrix_a_eq_inv_sym_b(&mut inv_a, &a);
+        if !f3x3_matrix_a_eq_inv_sym_b(&mut inv_a, &a) {
+            return Err(FitError::SingularFit {
+                tier: SolverTier::Ellipsoid,
+            });
+        }
 
         let mut tr_v = [0.0_f32; 3];
         for k in 0..3 {
@@ -329,23 +322,26 @@ impl Solver {
             }
         }
 
-        self.tr_v = tr_v;
-        self.tr_inv_w = tr_inv_w;
-        self.tr_b = tr_b;
-        self.tr_fit_error_percent = fit_err;
-        self.last_tier = Some(SolverTier::Ellipsoid);
-        Ok(self.last_fit().unwrap())
+        Self::validate_fit(MagCal {
+            hard_iron: tr_v,
+            soft_iron: tr_inv_w,
+            field_strength: tr_b,
+            fit_error_percent: fit_err,
+            sample_count: count,
+            tier: SolverTier::Ellipsoid,
+        })
     }
 
-    /// Run an axis-aligned ellipsoid fit (hard iron + diagonal soft iron). Needs at least 7 samples.
+    /// Run an axis-aligned ellipsoid fit (hard iron + diagonal soft iron).
     ///
     /// This corresponds with `fUpdateCalibration7EIG` in `magcal.c`.
     pub fn solve_axis_aligned(&mut self) -> Result<MagCal, FitError> {
         let count = self.sample_count();
-        if count < AXIS_ALIGNED_PARAMS {
+        let minimum_required = SolverTier::AxisAligned.min_samples_required();
+        if count < minimum_required {
             return Err(FitError::NotEnoughSamples {
                 provided: count,
-                required: AXIS_ALIGNED_PARAMS,
+                minimum_required,
             });
         }
 
@@ -378,6 +374,11 @@ impl Solver {
         let mut tr_v = [0.0_f32; 3];
         for k in 0..3 {
             a[k][k] = mat_b[k][j];
+            if a[k][k] == 0.0 {
+                return Err(FitError::SingularFit {
+                    tier: SolverTier::AxisAligned,
+                });
+            }
             det *= a[k][k];
             tr_v[k] = -0.5 * mat_b[k + 3][j] / a[k][k];
         }
@@ -405,23 +406,26 @@ impl Solver {
             tr_v[k] = tr_v[k] * self.scale + self.i_offset[k] as f32;
         }
 
-        self.tr_v = tr_v;
-        self.tr_inv_w = tr_inv_w;
-        self.tr_b = tr_b;
-        self.tr_fit_error_percent = fit_err;
-        self.last_tier = Some(SolverTier::AxisAligned);
-        Ok(self.last_fit().unwrap())
+        Self::validate_fit(MagCal {
+            hard_iron: tr_v,
+            soft_iron: tr_inv_w,
+            field_strength: tr_b,
+            fit_error_percent: fit_err,
+            sample_count: count,
+            tier: SolverTier::AxisAligned,
+        })
     }
 
-    /// Run a sphere fit (hard iron only; soft iron returned as the identity). Needs at least 4 samples.
+    /// Run a sphere fit (hard iron only; soft iron returned as the identity).
     ///
     /// This corresponds with `fUpdateCalibration4INV` in `magcal.c`.
     pub fn solve_sphere(&mut self) -> Result<MagCal, FitError> {
         let count = self.sample_count();
-        if count < SPHERE_PARAMS {
+        let minimum_required = SolverTier::Sphere.min_samples_required();
+        if count < minimum_required {
             return Err(FitError::NotEnoughSamples {
                 provided: count,
-                required: SPHERE_PARAMS,
+                minimum_required,
             });
         }
 
@@ -435,7 +439,11 @@ impl Solver {
         let mat_a4_full = mat_a4;
 
         let mut mat_b4 = mat_a4;
-        fmatrix_inverse_4x4(&mut mat_b4);
+        if !fmatrix_inverse_4x4(&mut mat_b4) {
+            return Err(FitError::SingularFit {
+                tier: SolverTier::Sphere,
+            });
+        }
 
         let mut beta = [0.0_f32; 4];
         for i in 0..4 {
@@ -480,12 +488,14 @@ impl Solver {
         let mut tr_inv_w = [[0.0_f32; 3]; 3];
         f3x3_matrix_a_eq_i(&mut tr_inv_w);
 
-        self.tr_v = tr_v;
-        self.tr_inv_w = tr_inv_w;
-        self.tr_b = tr_b;
-        self.tr_fit_error_percent = fit_err;
-        self.last_tier = Some(SolverTier::Sphere);
-        Ok(self.last_fit().unwrap())
+        Self::validate_fit(MagCal {
+            hard_iron: tr_v,
+            soft_iron: tr_inv_w,
+            field_strength: tr_b,
+            fit_error_percent: fit_err,
+            sample_count: count,
+            tier: SolverTier::Sphere,
+        })
     }
 }
 

@@ -14,16 +14,17 @@
 //! corrected = soft_iron * (raw - hard_iron)
 //! ```
 //!
-//! Three solver tiers are available, with recommended sample counts
-//! (and the absolute minimum the math allows in parentheses):
+//! Three solver tiers are available:
 //!
-//! - [`SolverTier::Sphere`]: hard iron only; recommend at least 40 (absolute minimum: 4).
-//! - [`SolverTier::AxisAligned`]: plus a diagonal soft iron; recommend at least 100 (absolute minimum: 7).
-//! - [`SolverTier::Ellipsoid`]: plus a full 3x3 soft iron; recommend at least 150 (absolute minimum: 10).
+//! - [`SolverTier::Sphere`]: hard iron only.
+//! - [`SolverTier::AxisAligned`]: plus a diagonal soft iron.
+//! - [`SolverTier::Ellipsoid`]: plus a full 3x3 soft iron.
 //!
 //! Recommended counts are not enforced: [`MagCal::fit`] still
 //! produces a (lower-quality) sphere fit when the count falls
 //! between the absolute floor and the recommended threshold.
+//! See [`SolverTier::min_samples_required`] and
+//! [`SolverTier::min_samples_recommended`] for the per-tier limits.
 //!
 //! Sample diversity matters more than raw count. It is recommended to slowly rotate
 //! through as many distinct orientations as practical.
@@ -82,8 +83,17 @@ pub enum SolverTier {
 }
 
 impl SolverTier {
+    /// Absolute minimum sample count required for this tier's math to run.
+    pub const fn min_samples_required(self) -> usize {
+        match self {
+            SolverTier::Sphere => 4,
+            SolverTier::AxisAligned => 7,
+            SolverTier::Ellipsoid => 10,
+        }
+    }
+
     /// Recommended minimum sample count for this tier.
-    pub const fn min_samples(self) -> usize {
+    pub const fn min_samples_recommended(self) -> usize {
         match self {
             SolverTier::Sphere => MIN_SAMPLES_SPHERE,
             SolverTier::AxisAligned => MIN_SAMPLES_AXIS_ALIGNED,
@@ -106,13 +116,15 @@ pub struct MagCal {
     pub field_strength: f32,
     /// Fit residual as a percentage of [`field_strength`](Self::field_strength).
     pub fit_error_percent: f32,
+    /// Number of samples included in this fit.
+    pub sample_count: usize,
     /// Tier that produced this fit.
     pub tier: SolverTier,
 }
 
 impl MagCal {
     /// Solve for a calibration, auto-picking the tier from the
-    /// sample count (see [`SolverTier::min_samples`]).
+    /// sample count (see [`SolverTier::min_samples_recommended`]).
     ///
     /// Coverage of the orientation sphere matters more than raw
     /// count. Below the recommended Sphere threshold, a sphere fit
@@ -121,7 +133,9 @@ impl MagCal {
     /// # Errors
     ///
     /// Returns [`FitError::NotEnoughSamples`] if there are fewer than
-    /// 4 samples (the sphere fit's absolute minimum requirement).
+    /// [`SolverTier::Sphere`]'s [`SolverTier::min_samples_required`] count.
+    /// Also returns a fit error if the samples are mathematically degenerate or
+    /// produce a non-finite calibration.
     pub fn fit(samples: &[[i16; 3]]) -> Result<Self, FitError> {
         let mut cal = Solver::new();
         for s in samples {
@@ -133,15 +147,17 @@ impl MagCal {
     /// Solve for a calibration using the given solver tier.
     ///
     /// Like [`fit`](Self::fit), but uses the supplied `tier` instead
-    /// of choosing from the sample count, and requires only as many
-    /// samples as the tier has parameters (4 / 7 / 10). Useful for
+    /// of choosing from the sample count, and requires only the tier's
+    /// [`SolverTier::min_samples_required`] count. Useful for
     /// running a higher-tier solver on a thinner dataset than
     /// [`fit`](Self::fit) would accept, at the cost of fit quality.
     ///
     /// # Errors
     ///
     /// Returns [`FitError::NotEnoughSamples`] if there are fewer samples than the
-    /// tier's absolute minimum requirement (4 for Sphere, 7 for AxisAligned, 10 for Ellipsoid).
+    /// tier's [`SolverTier::min_samples_required`] count. Also returns a fit
+    /// error if the samples are mathematically degenerate or produce a
+    /// non-finite calibration.
     pub fn fit_with(samples: &[[i16; 3]], tier: SolverTier) -> Result<Self, FitError> {
         let mut cal = Solver::new();
         for s in samples {
@@ -174,16 +190,36 @@ impl MagCal {
 
 #[derive(Debug, Clone, Copy)]
 pub enum FitError {
-    /// Sample count is below the tier's absolute minimum (4 / 7 / 10).
-    NotEnoughSamples { provided: usize, required: usize },
+    /// Sample count is below the tier's absolute minimum
+    NotEnoughSamples {
+        provided: usize,
+        minimum_required: usize,
+    },
+    /// Samples do not provide enough independent information for the requested fit.
+    SingularFit { tier: SolverTier },
+    /// The solver produced NaN, infinity, or a non-positive field strength.
+    NonFiniteFit { tier: SolverTier },
 }
 
 impl core::fmt::Display for FitError {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
-            FitError::NotEnoughSamples { provided, required } => write!(
+            FitError::NotEnoughSamples {
+                provided,
+                minimum_required,
+            } => write!(
                 f,
-                "not enough samples: provided {provided}, required at least {required}",
+                "not enough samples: provided {provided}, required at least {minimum_required}",
+            ),
+            FitError::SingularFit { tier } => write!(
+                f,
+                "singular {:?} fit: samples do not span enough independent orientations",
+                tier,
+            ),
+            FitError::NonFiniteFit { tier } => write!(
+                f,
+                "non-finite {:?} fit: calibration output is not numerically valid",
+                tier,
             ),
         }
     }

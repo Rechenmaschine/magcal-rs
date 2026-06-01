@@ -73,9 +73,9 @@ pub(crate) fn f3x3_matrix_det_a(a: &[[f32; 3]; 3]) -> f32 {
 }
 
 /// `f3x3matrixAeqInvSymB` in `matrix.c`: A = inverse(B) for symmetric
-/// B (only on/above-diagonal entries of B are read). On singular B, A
-/// is set to the identity (matches the C).
-pub(crate) fn f3x3_matrix_a_eq_inv_sym_b(a: &mut [[f32; 3]; 3], b: &[[f32; 3]; 3]) {
+/// B (only on/above-diagonal entries of B are read). Returns `false`
+/// when B is singular.
+pub(crate) fn f3x3_matrix_a_eq_inv_sym_b(a: &mut [[f32; 3]; 3], b: &[[f32; 3]; 3]) -> bool {
     let f_b11_b22_m_b12_b12 = b[1][1] * b[2][2] - b[1][2] * b[1][2];
     let f_b12_b02_m_b01_b22 = b[1][2] * b[0][2] - b[0][1] * b[2][2];
     let f_b01_b12_m_b11_b02 = b[0][1] * b[1][2] - b[1][1] * b[0][2];
@@ -84,26 +84,28 @@ pub(crate) fn f3x3_matrix_a_eq_inv_sym_b(a: &mut [[f32; 3]; 3], b: &[[f32; 3]; 3
         + b[0][1] * f_b12_b02_m_b01_b22
         + b[0][2] * f_b01_b12_m_b11_b02;
 
-    if ftmp != 0.0 {
-        ftmp = 1.0 / ftmp;
-        a[0][0] = f_b11_b22_m_b12_b12 * ftmp;
-        a[1][0] = f_b12_b02_m_b01_b22 * ftmp;
-        a[0][1] = a[1][0];
-        a[2][0] = f_b01_b12_m_b11_b02 * ftmp;
-        a[0][2] = a[2][0];
-        a[1][1] = (b[0][0] * b[2][2] - b[0][2] * b[0][2]) * ftmp;
-        a[2][1] = (b[0][2] * b[0][1] - b[0][0] * b[1][2]) * ftmp;
-        a[1][2] = a[2][1];
-        a[2][2] = (b[0][0] * b[1][1] - b[0][1] * b[0][1]) * ftmp;
-    } else {
-        f3x3_matrix_a_eq_i(a);
+    if ftmp == 0.0 {
+        return false;
     }
+
+    ftmp = 1.0 / ftmp;
+    a[0][0] = f_b11_b22_m_b12_b12 * ftmp;
+    a[1][0] = f_b12_b02_m_b01_b22 * ftmp;
+    a[0][1] = a[1][0];
+    a[2][0] = f_b01_b12_m_b11_b02 * ftmp;
+    a[0][2] = a[2][0];
+    a[1][1] = (b[0][0] * b[2][2] - b[0][2] * b[0][2]) * ftmp;
+    a[2][1] = (b[0][2] * b[0][1] - b[0][0] * b[1][2]) * ftmp;
+    a[1][2] = a[2][1];
+    a[2][2] = (b[0][0] * b[1][1] - b[0][1] * b[0][1]) * ftmp;
+
+    true
 }
 
 /// `fmatrixAeqInvA` in `matrix.c`, specialised to 4x4: in-place
-/// Gauss-Jordan inverse with full pivoting. On singular A, A is set
-/// to the identity (matches the C).
-pub(crate) fn fmatrix_inverse_4x4(a: &mut [[f32; 4]; 4]) {
+/// Gauss-Jordan inverse with full pivoting. Returns `false` when A is
+/// singular.
+pub(crate) fn fmatrix_inverse_4x4(a: &mut [[f32; 4]; 4]) -> bool {
     const N: usize = 4;
     let mut pivot_row = 0usize;
     let mut pivot_col = 0usize;
@@ -126,13 +128,7 @@ pub(crate) fn fmatrix_inverse_4x4(a: &mut [[f32; 4]; 4]) {
                         largest = abs;
                     }
                 } else if pivots[k] > 1 {
-                    // singular
-                    for r in 0..N {
-                        for c in 0..N {
-                            a[r][c] = if r == c { 1.0 } else { 0.0 };
-                        }
-                    }
-                    return;
+                    return false;
                 }
             }
         }
@@ -149,12 +145,7 @@ pub(crate) fn fmatrix_inverse_4x4(a: &mut [[f32; 4]; 4]) {
         col_ind[i] = pivot_col;
 
         if a[pivot_col][pivot_col] == 0.0 {
-            for r in 0..N {
-                for c in 0..N {
-                    a[r][c] = if r == c { 1.0 } else { 0.0 };
-                }
-            }
-            return;
+            return false;
         }
 
         let recip = 1.0 / a[pivot_col][pivot_col];
@@ -183,6 +174,8 @@ pub(crate) fn fmatrix_inverse_4x4(a: &mut [[f32; 4]; 4]) {
             }
         }
     }
+
+    true
 }
 
 /// `eigencompute` in `matrix.c`: in-place Jacobi-rotation eigenvalue
